@@ -88,13 +88,13 @@ dialog label{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;font-
       <div class="card"><h2>Unassigned <button id="adda">New ability</button></h2><div class="list" id="un"></div></div>
     </section>
     <div class="card"><h2>Save / Load</h2>
-      <textarea id="io" placeholder="Paste planner JSON or an Azeron software export (XQAAA…), or export"></textarea>
+      <textarea id="io" placeholder="Paste planner JSON (full profile incl. categories) or an Azeron export (XQAAA…), or export"></textarea>
       <div class="bar"><button id="ex">Export</button><button id="im">Import</button><button id="rs" class="dng">Reset</button></div>
-      <p class="mu" style="margin:8px 0 0">Saved automatically in the browser. Import accepts backups and software profile exports.</p>
+      <p class="mu" style="margin:8px 0 0">Saved automatically in the browser. <b>Export / Import</b> copies complete planner profiles including categories — use this to move a profile to another browser or site. Azeron software exports and keybind strings are also accepted, but those carry no categories (abilities go to <b>Unassigned</b>).</p>
     </div>
 
     <div class="card"><h2>Azeron Keybind Export</h2>
-      <p class="mu" style="margin:0 0 8px">Your planner layout is mapped to the connected device automatically. The exported profile uses your planner profile name. Generate, copy, then in Azeron: <b>Profiles → Keybinds → Paste keybind from clipboard → Apply</b>.</p>
+      <p class="mu" style="margin:0 0 8px">Your planner layout is mapped to the connected device automatically. The exported profile uses your planner profile name. Generate, copy, then in Azeron: <b>Profiles → Keybinds → Paste keybind from clipboard → Apply</b>. This string is for the device only — it does not contain planner categories; use <b>Export / Import</b> above to transfer a profile with its categories.</p>
       <div class="azhint" id="azhint">Ready. Only buttons that have a planner key or ability are changed; everything else stays as in the current device profile.</div>
       <div class="mu" style="margin:6px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <label for="azlayoutsel">Keyboard layout:</label>
@@ -131,7 +131,8 @@ const DEF={c2r2:['4'],c3r2:['3'],c4r2:['2'],c5r2:['1'],c2r3:['Z','Item 5','it'],
 c2r4:['Q','Ability 1','ab'],c3r4:['W','Ability 2','ab'],c4r4:['E','Ability 3','ab'],c5r4:['R','Ulti','ab'],c6r4:['Tab','Next Unit','ui'],
 c2r5:['S','Stop','ut'],c3r5:['A','Attack','ut'],c4r5:['D','Ability 5','ab'],c5r5:['F','Ability 6','ab'],c9r5:['Tab','Tab','ui'],
 c3r6:['F2','Quick buy','ut'],c4r6:['F3','Courier deliver items','ut'],c5r6:['Space','Item 3','it'],c7r6:[';','Item 6','it']};
-const DEFAULT_CATS=[{id:'ut',name:'Utility',color:'#2fa84f'},{id:'ui',name:'Interface',color:'#f08a24'},{id:'ab',name:'Abilities',color:'#e04545'},{id:'it',name:'Items',color:'#3b82f6'}];
+const DEFAULT_CATS=[{id:'un',name:'Unassigned',color:'#6b7280'},{id:'ut',name:'Utility',color:'#2fa84f'},{id:'ui',name:'Interface',color:'#f08a24'},{id:'ab',name:'Abilities',color:'#e04545'},{id:'it',name:'Items',color:'#3b82f6'}];
+const UNASSIGNED_CAT='un';
 const STORE='azl';
 
 function defaultProfile(name='Standard'){
@@ -162,11 +163,15 @@ function normalize(n){
   n.v=2;
   n.profiles.forEach(p=>{
     if(!Array.isArray(p.c)||!p.c.length)p.c=DEFAULT_CATS.map(c=>({...c}));
+    // Every profile gets the catch-all category (older saves and imports too).
+    if(!p.c.some(c=>c.id===UNASSIGNED_CAT))p.c.unshift({id:UNASSIGNED_CAT,name:'Unassigned',color:'#6b7280'});
     if(!Array.isArray(p.a))p.a=[];
     if(!p.b||typeof p.b!=='object')p.b={};
     CELLS.forEach(([id])=>{if(!p.b[id])p.b[id]={key:'',ab:null}});
     const catIds=new Set(p.c.map(c=>c.id));
-    p.a.forEach(a=>{if(!catIds.has(a.cat))a.cat=p.c[0].id;if(typeof a.key!=='string')a.key=''});
+    // Unknown category ids (e.g. from a different planner version) go to Unassigned,
+    // never silently into the first real category like Utility.
+    p.a.forEach(a=>{if(!catIds.has(a.cat))a.cat=UNASSIGNED_CAT;if(typeof a.key!=='string')a.key=''});
     const abIds=new Set(p.a.map(a=>a.id));
     Object.values(p.b).forEach(b=>{if(b.ab&&!abIds.has(b.ab))b.ab=null});
     // No hotkey without an ability: a cell with no ability must not carry a key.
@@ -397,7 +402,7 @@ $('#im').onclick=()=>{
       AZP=base;
       try{localStorage.setItem('azbase',JSON.stringify(AZP))}catch(e){}
       S=normalize(S);all();
-      $('#io').value='Imported '+made.length+' profile(s) from Azeron export. Export base: '+AZP.name+'. Your planner profile name is used on export.';
+      $('#io').value='Imported '+made.length+' profile(s) from Azeron export. Export base: '+AZP.name+'. Keybind strings have no category data, so abilities are placed in "Unassigned". To move a profile between planner instances with its categories, use Export / Import (Save / Load) instead.';
     }catch(e){$('#io').value='Invalid Azeron export: '+(e&&e.message||e)}
     return;
   }
@@ -462,7 +467,8 @@ const profileFromSoftware=sp=>{
     const label=String(i.label||'').trim();
     const key=azToKeyMapped((i.keyValues||[])[0]);
     if(!label&&!key)return;
-    const a={id:uid(),name:label||key,cat:p.c[0].id,icon:'',key:key};
+    // Software/keybind exports carry no planner categories -> use the catch-all.
+    const a={id:uid(),name:label||key,cat:UNASSIGNED_CAT,icon:'',key:key};
     p.a.push(a);
     p.b[cell]={key:key,ab:a.id};
   });
